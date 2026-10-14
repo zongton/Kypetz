@@ -143,25 +143,3 @@ def run_self_healing_splash():
 
     root.destroy()
 
-run_self_healing_splash()
-
-import json, time, threading, tempfile, urllib.request, re, queue, socket, http.server, socketserver
-import numpy as np
-import sounddevice as sd
-import keyboard
-from vosk import Model, KaldiRecognizer, SetLogLevel
-
-# 强制 urllib 直连，防止本地端口被系统代理拦截
-urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler({})))
-
-from PySide6.QtCore import Qt, QUrl, QObject, Signal, QTimer, QPoint, Slot, QByteArray, QSize
-from PySide6.QtGui import QColor, QPainter, QBrush, QLinearGradient, QFont, QPen, QIcon, QPixmap
-from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-                               QPushButton, QLabel, QDialog, QFormLayout,
-                               QLineEdit, QComboBox, QDialogButtonBox, QMessageBox,
-                               QGraphicsDropShadowEffect, QStackedWidget, QFrame,
-                               QPlainTextEdit, QTextEdit, QTextBrowser, QMenu, QScrollArea, QFileDialog)
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebChannel import QWebChannel
-

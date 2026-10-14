@@ -138,6 +138,8 @@ def idle_companion_loop(win) -> None:
 
 def main():
     """主程序入口与界面生命周期调度"""
+    # 0. 优先确保本地静态 HTTP 服务已在后台就绪 (绝对杜绝 WebEngine 加载 Connection Refused)
+
     app = QApplication(sys.argv)
     app.setWindowIcon(make_svg_icon(SVGS["cat"], 32))
     font = QFont()
