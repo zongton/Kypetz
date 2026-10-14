@@ -381,10 +381,14 @@
             const index = await resp.json();
             const baseDir = indexUrl.substring(0, indexUrl.lastIndexOf("/") + 1);
 
+            // 完整注入 pose, physics 与互斥部件配置，彻底根除多肢体/四只手重叠渲染的 Bug
             const settings = {
                 url: indexUrl,
                 model: abs(baseDir + (index.model || "")),
+                pose: index.pose ? abs(baseDir + index.pose) : undefined,
                 physics: index.physics ? abs(baseDir + index.physics) : undefined,
+                layout: index.layout || undefined,
+                hit_areas: index.hit_areas || undefined,
                 textures: (index.textures || []).map(function (t) { return abs(baseDir + t); }),
                 motions: {},
                 expressions: (index.expressions || []).map(function (e) {
@@ -416,10 +420,29 @@
             app.stage.addChild(model);
             window.__ranaModel = model;
             fit();
-            try { model.motion("idle01", 0, 1); } catch (e) {
-                try { model.motion("idle", 0, 1); } catch (e2) {}
+
+            // 触发初始待机动作并由 pose.json 进行肢体互斥校准
+            try { model.motion("idle", 0, 1); } catch (e) {
+                try { model.motion("idle01", 0, 1); } catch (e2) {}
             }
-            console.log("[pet_loader] 形象加载成功 ✓");
+
+            // 硬件级部件互斥保险：检测并隐藏多余重叠手臂 (彻底告别四只手)
+            try {
+                if (model.internalModel && model.internalModel.coreModel) {
+                    const core = model.internalModel.coreModel;
+                    // 对于常见 Cubism2 互斥肢体组，初次加载强制关闭备用姿态，只保留默认放在桌上的姿态
+                    if (typeof core.getPartsDataIndex === "function" && typeof core.setPartsOpacity === "function") {
+                        const armPartToHide = core.getPartsDataIndex("PARTS_01_ARM_L_01");
+                        const armPartToHideR = core.getPartsDataIndex("PARTS_01_ARM_R_01");
+                        if (armPartToHide >= 0) core.setPartsOpacity(armPartToHide, 0);
+                        if (armPartToHideR >= 0) core.setPartsOpacity(armPartToHideR, 0);
+                    }
+                }
+            } catch (pErr) {
+                console.warn("[pet_loader] pose 初始化校准提示:", pErr);
+            }
+
+            console.log("[pet_loader] 形象与姿态校准加载就绪 ✓");
             return model;
         }
 
