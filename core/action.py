@@ -320,3 +320,13 @@ def generate_action_guide(model_key: str = None) -> str:
         f"系统会自动驱动你的身体做出对应表演，并在给用户展示的气泡中为你自动抹除机器指令，只留下纯净台词。"
     )
     return "\n".join(lines)
+
+def clean_display_text(text: str) -> str:
+    """
+    清洗用于在桌面气泡卡片上显示的台词文本。
+    彻底抹除所有机器动作控制标签 ([action: ...], [motion: ...], [expression: ...])，
+    确保气泡框中仅展示自然优美的台词，动作交由模型表演。
+    """
+    t = text or ""
+    t = re.sub(r"\[(?:action|motion|expression)\s*:[^\]]*\]", "", t, flags=re.I)
+    return t.strip()

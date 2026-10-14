@@ -10,18 +10,24 @@ import time
 import json
 import random
 import threading
-import keyboard
+
+# 1. 启动自愈诊断舱 (极简原生 Tkinter 流水线，在导入任何三方依赖前先执行环境自检与自愈)
+from ui.splash import run_self_healing_splash
+run_self_healing_splash()
+
+# 2. 安全导入基础第三方依赖
+try:
+    import keyboard
+except ImportError:
+    keyboard = None
+
 from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtGui import QFont, QColor, QCursor
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
 
-# 1. 启动自愈诊断舱 (极简原生 Tkinter 流水线)
-from ui.splash import run_self_healing_splash
-run_self_healing_splash()
-
-# 2. 导入核心层、音频层与界面层模块
+# 3. 导入核心层、音频层与界面层模块
 from core.config import (
     APP_NAME, APP_VERSION, PORT, _cfg, save_config,
     result_queue, _recording, _tts_lock, _is_speaking, _last_user_activity,
