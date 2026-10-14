@@ -368,7 +368,7 @@
             // 1. 优先使用 pixi-live2d-display 官方全通用加载器 (原生自动识别 Cubism 2 / 3 / 4 / 5)
             let newModel = null;
             try {
-                newModel = await Live2DModelCls.from(indexUrl, { autoInteract: false, motionPreload: true });
+                newModel = await Live2DModelCls.from(indexUrl, { autoInteract: true, motionPreload: true });
             } catch (errFromUrl) {
                 console.warn("[pet_loader] 直接 URL 原生加载遇阻，进入自适应回退流水线:", errFromUrl);
 
@@ -513,6 +513,21 @@
                 document.addEventListener("mouseup", onMouseUp);
             });
         })();
+
+        // ---- 全局视线与头部灵动追踪 (眼神注视鼠标) ----
+        window.addEventListener("pointermove", function (e) {
+            if (model && typeof model.focus === "function") {
+                model.focus(e.clientX, e.clientY);
+            }
+        });
+
+        document.addEventListener("mouseleave", function () {
+            if (model && typeof model.focus === "function") {
+                const w = window.innerWidth || 340;
+                const h = window.innerHeight || 500;
+                model.focus(w / 2, h / 2);
+            }
+        });
 
         document.addEventListener("wheel", function (e) {
             if (e.target && e.target.closest && e.target.closest("textarea, input")) return;
