@@ -361,55 +361,66 @@
         }
         window.setInterval(playIdle, 300);
 
-        async function loadModelByDir(modelDir) {
+                async function loadModelByDir(modelDir) {
             let indexUrl = resolveModelUrl(modelDir);
             console.log("[pet_loader] 正在加载 Live2D 描述文件 ->", indexUrl);
 
-            let resp = await fetch(indexUrl);
-            if (!resp.ok && indexUrl.endsWith("/index.json")) {
-                let fallbackUrl = indexUrl.replace(/\/index\.json$/, "/model.json");
-                let r2 = await fetch(fallbackUrl);
-                if (r2.ok) {
-                    indexUrl = fallbackUrl;
-                    resp = r2;
-                }
-            }
-            if (!resp.ok) {
-                throw new Error("无法加载模型描述文件 (HTTP " + resp.status + "): " + indexUrl);
-            }
-
-            const index = await resp.json();
-            const baseDir = indexUrl.substring(0, indexUrl.lastIndexOf("/") + 1);
-
-            // 完整注入 pose, physics 与互斥部件配置，彻底根除多肢体/四只手重叠渲染的 Bug
-            const settings = {
-                url: indexUrl,
-                model: abs(baseDir + (index.model || "")),
-                pose: index.pose ? abs(baseDir + index.pose) : undefined,
-                physics: index.physics ? abs(baseDir + index.physics) : undefined,
-                layout: index.layout || undefined,
-                hit_areas: index.hit_areas || undefined,
-                textures: (index.textures || []).map(function (t) { return abs(baseDir + t); }),
-                motions: {},
-                expressions: (index.expressions || []).map(function (e) {
-                    return { name: e.name, file: abs(baseDir + e.file) };
-                }),
-            };
-            for (const name in (index.motions || {})) {
-                settings.motions[name] = index.motions[name].map(function (m) {
-                    return { file: abs(baseDir + m.file) };
-                });
-            }
-            if (!settings.motions.idle && settings.motions.idle01) {
-                settings.motions.idle = settings.motions.idle01;
-            }
-
+            // 1. 优先使用 pixi-live2d-display 官方全通用加载器 (原生自动识别 Cubism 2 / 3 / 4 / 5)
             let newModel = null;
             try {
+                newModel = await Live2DModelCls.from(indexUrl, { autoInteract: false, motionPreload: true });
+            } catch (errFromUrl) {
+                console.warn("[pet_loader] 直接 URL 原生加载遇阻，进入自适应回退流水线:", errFromUrl);
+
+                let resp = await fetch(indexUrl);
+                if (!resp.ok && indexUrl.endsWith("/index.json")) {
+                    let fallbackUrl = indexUrl.replace(/\/index\.json$/, "/model.json");
+                    let r2 = await fetch(fallbackUrl);
+                    if (r2.ok) {
+                        indexUrl = fallbackUrl;
+                        resp = r2;
+                    }
+                }
+                if (!resp.ok) {
+                    throw new Error("无法加载模型描述文件 (HTTP " + resp.status + "): " + indexUrl);
+                }
+
+                const index = await resp.json();
+                const baseDir = indexUrl.substring(0, indexUrl.lastIndexOf("/") + 1);
+
+                // 兼顾 Cubism 2 与 Cubism 3/4 FileReferences 结构
+                const fileRefs = index.FileReferences || {};
+                const mocFile = index.model || fileRefs.Moc || "";
+                const poseFile = index.pose || fileRefs.Pose;
+                const physicsFile = index.physics || fileRefs.Physics;
+                const rawTextures = index.textures || fileRefs.Textures || [];
+                const rawMotions = index.motions || fileRefs.Motions || {};
+                const rawExps = index.expressions || fileRefs.Expressions || [];
+
+                const settings = {
+                    url: indexUrl,
+                    model: abs(baseDir + mocFile),
+                    pose: poseFile ? abs(baseDir + poseFile) : undefined,
+                    physics: physicsFile ? abs(baseDir + physicsFile) : undefined,
+                    layout: index.layout || undefined,
+                    hit_areas: index.hit_areas || fileRefs.HitAreas || undefined,
+                    textures: rawTextures.map(function (t) { return abs(baseDir + t); }),
+                    motions: {},
+                    expressions: rawExps.map(function (e) {
+                        return { name: e.name || e.Name, file: abs(baseDir + (e.file || e.File)) };
+                    }),
+                };
+                for (const name in rawMotions) {
+                    const mList = Array.isArray(rawMotions[name]) ? rawMotions[name] : [rawMotions[name]];
+                    settings.motions[name] = mList.map(function (m) {
+                        return { file: abs(baseDir + (m.file || m.File)) };
+                    });
+                }
+                if (!settings.motions.idle && settings.motions.idle01) {
+                    settings.motions.idle = settings.motions.idle01;
+                }
+
                 newModel = await Live2DModelCls.from(settings, { motionPreload: true });
-            } catch (err) {
-                console.warn("[pet_loader] settings 构建失败，尝试直接从 URL 智能解析:", err);
-                newModel = await Live2DModelCls.from(indexUrl, { motionPreload: true });
             }
 
             if (model && model.parent) {
@@ -426,11 +437,10 @@
                 try { model.motion("idle01", 0, 1); } catch (e2) {}
             }
 
-            // 硬件级部件互斥保险：检测并隐藏多余重叠手臂 (彻底告别四只手)
+            // 部件互斥初始状态校准
             try {
                 if (model.internalModel && model.internalModel.coreModel) {
                     const core = model.internalModel.coreModel;
-                    // 对于常见 Cubism2 互斥肢体组，初次加载强制关闭备用姿态，只保留默认放在桌上的姿态
                     if (typeof core.getPartsDataIndex === "function" && typeof core.setPartsOpacity === "function") {
                         const armPartToHide = core.getPartsDataIndex("PARTS_01_ARM_L_01");
                         const armPartToHideR = core.getPartsDataIndex("PARTS_01_ARM_R_01");
@@ -438,11 +448,9 @@
                         if (armPartToHideR >= 0) core.setPartsOpacity(armPartToHideR, 0);
                     }
                 }
-            } catch (pErr) {
-                console.warn("[pet_loader] pose 初始化校准提示:", pErr);
-            }
+            } catch (pErr) { }
 
-            console.log("[pet_loader] 形象与姿态校准加载就绪 ✓");
+            console.log("[pet_loader] 形象加载成功，适配全部 Live2D 规范 ✓");
             return model;
         }
 

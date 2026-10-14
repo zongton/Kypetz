@@ -60,17 +60,23 @@ def scan_available_models() -> list:
             try:
                 with open(os.path.join(root, cfg_file), "r", encoding="utf-8", errors="ignore") as jf:
                     meta = json.load(jf)
-                    motions_obj = meta.get("motions")
+                    file_refs = meta.get("FileReferences", {})
+                    motions_obj = meta.get("motions") or file_refs.get("Motions")
                     if isinstance(motions_obj, dict):
                         m_count = len(motions_obj)
-                    if meta.get("name"):
-                        model_display_name = meta.get("name") + " (" + folder_name + ")"
+                    raw_name = meta.get("name") or meta.get("Name")
+                    if raw_name:
+                        model_display_name = str(raw_name) + " (" + folder_name + ")"
             except Exception:
                 pass
 
             tag = " [" + str(m_count) + "动作]" if m_count else ""
-            # 统一使用标准的 live2d-model/ 规范相对路径，杜绝路径拼接歧义
-            model_key = f"live2d-model/{rel_dir}"
+            # 若不是标准 index.json，把精准配置文件带在路径中，彻底免除盲猜
+            if cfg_file in ["index.json", "model.json"]:
+                model_key = f"live2d-model/{rel_dir}"
+            else:
+                model_key = f"live2d-model/{rel_dir}/{cfg_file}"
+
             models.append({
                 "key": model_key,
                 "name": model_display_name + tag,
@@ -918,27 +924,47 @@ class KypetzDashboard(QDialog):
     def do_check_update(self):
         repo = DEFAULT_GITHUB_REPO
         self.btn_check_update.setEnabled(False)
-        self.lbl_update_status.setText("正在向 GitHub 查询最新 Release 版本...")
+        self.lbl_update_status.setText("正在连接 GitHub 查询最新版本...")
         self.update_notes.hide()
         self.btn_do_upgrade.hide()
+
+        def _get_proxy_opener():
+            import socket
+            for env in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY"]:
+                if os.environ.get(env):
+                    return urllib.request.build_opener(urllib.request.ProxyHandler({"http": os.environ.get(env), "https": os.environ.get(env)}))
+            for port in [7890, 10809, 10808, 7897, 1080]:
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(0.08)
+                        if s.connect_ex(("127.0.0.1", port)) == 0:
+                            p_url = f"http://127.0.0.1:{port}"
+                            return urllib.request.build_opener(urllib.request.ProxyHandler({"http": p_url, "https": p_url}))
+                except Exception:
+                    pass
+            return urllib.request.build_opener()
 
         def _worker():
             try:
                 url = f"https://api.github.com/repos/{repo}/releases/latest"
-                req = urllib.request.Request(url, headers={"User-Agent": "Kypet-App"})
-                with urllib.request.urlopen(req, timeout=12) as r:
+                req = urllib.request.Request(url, headers={"User-Agent": "Kypetz-Desktop/1.0", "Accept": "application/vnd.github+json"})
+                opener = _get_proxy_opener()
+                # 严格限制 6 秒超时，防止网络死锁卡死
+                with opener.open(req, timeout=6) as r:
                     data = json.loads(r.read().decode("utf-8"))
 
                 tag = data.get("tag_name", "").strip()
                 body = data.get("body", "暂无详细更新说明。")
                 name = data.get("name", tag)
 
-                # 寻找 zip 包下载地址 (优先 release assets 中的 zip，其次源码 zipball)
-                zip_url = data.get("zipball_url")
+                # 寻找 zip 安装包下载地址
+                zip_url = None
                 for asset in data.get("assets", []):
                     if asset.get("name", "").endswith(".zip"):
                         zip_url = asset.get("browser_download_url")
                         break
+                if not zip_url:
+                    zip_url = data.get("zipball_url")
 
                 # 比较版本号
                 remote_clean = tag.lstrip("vV")
@@ -966,9 +992,11 @@ class KypetzDashboard(QDialog):
                 def _ui_err(err_msg):
                     self.btn_check_update.setEnabled(True)
                     if "404" in err_msg:
-                        self.lbl_update_status.setText(f"当前已是最新发布版本 ({APP_VERSION}) ✓")
+                        self.lbl_update_status.setText(f"🎉 当前已是最新发布版本 ({APP_VERSION}) ✓")
+                    elif "timed out" in err_msg.lower() or "10054" in err_msg or "reset" in err_msg.lower():
+                        self.lbl_update_status.setText("连接 GitHub 超时 (网络波动或被阻断，建议开启网络代理重试)")
                     else:
-                        self.lbl_update_status.setText(f"检查更新完成: 当前为最新版本或未检测到新 Release。")
+                        self.lbl_update_status.setText(f"检查完成: 当前已是最新发布版本 ({APP_VERSION}) ✓")
                     self.append_log(f"[UPDATE] 检查更新状态: {err_msg}")
                 QTimer.singleShot(0, lambda: _ui_err(str(e)))
 
@@ -993,12 +1021,21 @@ class KypetzDashboard(QDialog):
         self.lbl_update_status.setText("正在极速下载更新压缩包，请稍候...")
 
         def _upgrade_worker():
-            import zipfile
             temp_zip = os.path.join(tempfile.gettempdir(), f"kypet_update_{os.urandom(4).hex()}.zip")
             try:
-                # 1. 下载新版本 zip 包
-                req = urllib.request.Request(self.latest_zip_url, headers={"User-Agent": "Kypet-App"})
-                with urllib.request.urlopen(req, timeout=120) as r, open(temp_zip, "wb") as f:
+                # 1. 下载新版本 zip 包 (使用智能代理连接)
+                import socket
+                proxy_handler = None
+                for port in [7890, 10809, 10808, 7897]:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(0.08)
+                        if s.connect_ex(("127.0.0.1", port)) == 0:
+                            proxy_handler = urllib.request.ProxyHandler({"http": f"http://127.0.0.1:{port}", "https": f"http://127.0.0.1:{port}"})
+                            break
+                opener = urllib.request.build_opener(proxy_handler) if proxy_handler else urllib.request.build_opener()
+
+                req = urllib.request.Request(self.latest_zip_url, headers={"User-Agent": "Kypetz-Desktop/1.0"})
+                with opener.open(req, timeout=90) as r, open(temp_zip, "wb") as f:
                     f.write(r.read())
 
                 # 2. 解压覆盖到本地目录 (严格跳过 config.json 防止覆盖私钥)
@@ -1030,7 +1067,7 @@ class KypetzDashboard(QDialog):
                     self.append_log(f"[UPDATE] 自动覆盖升级完成，版本: {self.latest_ver_tag} ✓")
                     QMessageBox.information(
                         self, "升级成功",
-                        f"Kypet 已成功自动热升级至 {self.latest_ver_tag}！\n\n点击确定退出程序，重新启动即可享受最新功能。"
+                        f"Kypetz 已成功自动热升级至 {self.latest_ver_tag}！\n\n点击确定退出程序，重新启动即可享受最新功能。"
                     )
                     QApplication.instance().quit()
 

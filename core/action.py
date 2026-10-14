@@ -75,9 +75,15 @@ def get_model_capabilities(model_key: str = None) -> tuple:
         return [], []
 
     meta = None
-    for f in ["index.json", "model.json"]:
+    target_files = ["index.json", "model.json"]
+    if os.path.exists(full_path):
+        for f in os.listdir(full_path):
+            if f.endswith(".model3.json") and f not in target_files:
+                target_files.append(f)
+
+    for f in target_files:
         p = os.path.join(full_path, f)
-        if os.path.exists(p):
+        if os.path.exists(p) and os.path.isfile(p):
             try:
                 with open(p, "r", encoding="utf-8", errors="ignore") as file:
                     meta = json.load(file)
@@ -88,11 +94,19 @@ def get_model_capabilities(model_key: str = None) -> tuple:
     if not meta:
         return [], []
 
-    motions = list(meta.get("motions", {}).keys())
-    expressions = [
-        e.get("name") for e in meta.get("expressions", [])
-        if isinstance(e, dict) and e.get("name")
-    ]
+    # 统一兼容 Cubism 2 (.model.json) 与 Cubism 3/4 (.model3.json / FileReferences)
+    file_refs = meta.get("FileReferences", {})
+    motions_dict = meta.get("motions") or file_refs.get("Motions") or {}
+    expressions_raw = meta.get("expressions") or file_refs.get("Expressions") or []
+
+    motions = list(motions_dict.keys()) if isinstance(motions_dict, dict) else []
+    expressions = []
+    if isinstance(expressions_raw, list):
+        for e in expressions_raw:
+            if isinstance(e, dict):
+                name = e.get("name") or e.get("Name")
+                if name:
+                    expressions.append(name)
     return motions, expressions
 
 
