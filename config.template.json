@@ -8,7 +8,7 @@
     "qwen-plus"
   ],
   "tts_url": "http://127.0.0.1:9880",
-  "live2d_model": "038_collabo_a_ur",
+  "live2d_model": "live2d-model/shizuku",
   "system_prompt": "",
   "voice_lang": "zh"
 }
