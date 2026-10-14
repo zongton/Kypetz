@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Configuration with private API Keys (Use config.template.json instead!)
+config.json
+
+# Audio and temporary cache files
+*.wav
+*.mp3
+*.log
+temp/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.env
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Vosk offline models (Download separately if needed)
+models/
+vosk-model*

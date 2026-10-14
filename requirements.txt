@@ -1,0 +1,8 @@
+PySide6>=6.5.0
+PySide6-WebEngine>=6.5.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+scipy>=1.10.0
+keyboard>=0.13.5
+vosk>=0.3.45
+edge-tts>=6.1.9

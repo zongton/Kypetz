@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN" style="width: 100% !important; height: 100% !important;">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kypetz Live2D Stage</title>
+  <script src="./js/qwebchannel.js"></script>
+  <!-- Universal Cubism Core SDK & Display -->
+  <script src="./js/pixi.min.js"></script>
+  <script src="./js/live2d.min.js"></script>
+  <script src="./js/live2dcubismcore.js"></script>
+  <script src="./js/pixi-live2d-display-cubism2.min.js"></script>
+  <script src="./js/pet_loader.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100% !important;
+      height: 100% !important;
+      overflow: hidden;
+      background: transparent !important;
+      user-select: none;
+    }
+    #stage-container {
+      width: 100% !important;
+      height: 100% !important;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #live2d {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage-container">
+    <canvas id="live2d"></canvas>
+  </div>
+  <script src="./js/jquery.min.js"></script>
+  <script src="./js/chat_panel.js"></script>
+</body>
+</html>

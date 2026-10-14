@@ -1,0 +1,14 @@
+{
+  "llm_base": "https://api.deepseek.com",
+  "llm_key": "YOUR_API_KEY_HERE",
+  "llm_model": "deepseek-chat",
+  "llm_models": [
+    "deepseek-chat",
+    "gpt-4o-mini",
+    "qwen-plus"
+  ],
+  "tts_url": "http://127.0.0.1:9880",
+  "live2d_model": "038_collabo_a_ur",
+  "system_prompt": "",
+  "voice_lang": "zh"
+}
