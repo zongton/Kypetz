@@ -291,6 +291,10 @@ def render_markdown_content(raw_text: str) -> str:
     return container
 
 # ---------------- KYPETZ CORE · 独立悬浮控制中枢 ----------------
+class UpdateSignals(QObject):
+    done_sig = Signal(dict)
+    err_sig = Signal(str)
+
 class KypetzDashboard(QDialog):
     def __init__(self, cfg=None, save_cb=None, fetch_cb=None, change_skin_cb=None, parent=None, **kwargs):
         parent = parent or kwargs.get("parent")
@@ -928,6 +932,58 @@ class KypetzDashboard(QDialog):
         self.update_notes.hide()
         self.btn_do_upgrade.hide()
 
+        # 专为跨线程通信打造的 Qt 信号总线 (彻底根除子线程 QTimer.singleShot 不执行导致卡死的 Bug)
+        if not hasattr(self, "_update_signals"):
+            self._update_signals = UpdateSignals(self)
+            def _on_done(data):
+                self.btn_check_update.setEnabled(True)
+                tag = data.get("tag_name", "").strip()
+                body = data.get("body", "暂无详细更新说明。")
+                name = data.get("name", tag)
+
+                zip_url = None
+                for asset in data.get("assets", []):
+                    if asset.get("name", "").endswith(".zip"):
+                        zip_url = asset.get("browser_download_url")
+                        break
+                if not zip_url:
+                    zip_url = data.get("zipball_url")
+
+                self.latest_zip_url = zip_url
+                self.latest_ver_tag = tag
+
+                self.update_notes.setText(body)
+                self.update_notes.show()
+
+                remote_clean = tag.lstrip("vV")
+                local_clean = APP_VERSION.lstrip("vV")
+
+                if remote_clean and remote_clean != local_clean:
+                    self.lbl_update_status.setText(f"🎉 发现新版本: {tag} ({name})！当前运行版本: {APP_VERSION}")
+                    if zip_url:
+                        self.btn_do_upgrade.setText(f"🚀 一键自动下载并热升级至 {tag}")
+                        self.btn_do_upgrade.show()
+                    self.append_log(f"[UPDATE] 成功检测到新发布版本: {tag} ({name}) ✓")
+                else:
+                    self.lbl_update_status.setText(f"✓ 成功检测到 GitHub 最新 Release: {tag}！当前已是该版本。")
+                    if zip_url:
+                        self.btn_do_upgrade.setText(f"🔄 重新下载覆盖安装此版本 ({tag})")
+                        self.btn_do_upgrade.show()
+                    self.append_log(f"[UPDATE] GitHub 远程版本同步成功: {tag} ({name}) ✓")
+
+            def _on_err(err_msg):
+                self.btn_check_update.setEnabled(True)
+                if "404" in err_msg:
+                    self.lbl_update_status.setText(f"远程仓库暂无已发布的 Release 标签，当前本地版本: {APP_VERSION}")
+                elif "timed out" in err_msg.lower() or "10054" in err_msg or "reset" in err_msg.lower():
+                    self.lbl_update_status.setText("连接 GitHub 超时 (国内网络波动，建议开启代理后重试)")
+                else:
+                    self.lbl_update_status.setText(f"网络连接提示: {err_msg}")
+                self.append_log(f"[UPDATE] 查询状态: {err_msg}")
+
+            self._update_signals.done_sig.connect(_on_done)
+            self._update_signals.err_sig.connect(_on_err)
+
         def _get_proxy_opener():
             import socket
             for env in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY"]:
@@ -942,7 +998,6 @@ class KypetzDashboard(QDialog):
                             return urllib.request.build_opener(urllib.request.ProxyHandler({"http": p_url, "https": p_url}))
                 except Exception:
                     pass
-            # 默认直连 opener (清空代理环境变量干扰)
             return urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
         def _worker():
@@ -952,59 +1007,10 @@ class KypetzDashboard(QDialog):
                 opener = _get_proxy_opener()
                 with opener.open(req, timeout=8) as r:
                     data = json.loads(r.read().decode("utf-8"))
-
-                tag = data.get("tag_name", "").strip()
-                body = data.get("body", "暂无详细更新说明。")
-                name = data.get("name", tag)
-
-                # 寻找 zip 安装包下载地址
-                zip_url = None
-                for asset in data.get("assets", []):
-                    if asset.get("name", "").endswith(".zip"):
-                        zip_url = asset.get("browser_download_url")
-                        break
-                if not zip_url:
-                    zip_url = data.get("zipball_url")
-
-                # 规范化版本号比较
-                remote_clean = tag.lstrip("vV")
-                local_clean = APP_VERSION.lstrip("vV")
-
-                def _ui_done():
-                    self.btn_check_update.setEnabled(True)
-                    self.latest_zip_url = zip_url
-                    self.latest_ver_tag = tag
-
-                    # 无论版本是否相同，均完整展现拉取到的 GitHub Release 详情
-                    self.update_notes.setText(body)
-                    self.update_notes.show()
-
-                    if remote_clean and remote_clean != local_clean:
-                        self.lbl_update_status.setText(f"🎉 发现新版本: {tag} ({name})！当前运行版本: {APP_VERSION}")
-                        if zip_url:
-                            self.btn_do_upgrade.setText(f"🚀 一键自动下载并热升级至 {tag}")
-                            self.btn_do_upgrade.show()
-                        self.append_log(f"[UPDATE] 成功检测到新发布版本: {tag} ({name}) ✓")
-                    else:
-                        self.lbl_update_status.setText(f"✓ 成功检测到 GitHub 最新 Release: {tag}！当前已是该版本。")
-                        if zip_url:
-                            self.btn_do_upgrade.setText(f"🔄 重新下载覆盖安装此版本 ({tag})")
-                            self.btn_do_upgrade.show()
-                        self.append_log(f"[UPDATE] GitHub 远程版本同步成功: {tag} ({name}) ✓")
-
-                QTimer.singleShot(0, _ui_done)
-
+                # 通过 Qt QueuedConnection 信号安全投递至主 GUI 线程执行，瞬间解开界面
+                self._update_signals.done_sig.emit(data)
             except Exception as e:
-                def _ui_err(err_msg):
-                    self.btn_check_update.setEnabled(True)
-                    if "404" in err_msg:
-                        self.lbl_update_status.setText(f"远程仓库暂无已发布的 Release 标签，当前本地版本: {APP_VERSION}")
-                    elif "timed out" in err_msg.lower() or "10054" in err_msg or "reset" in err_msg.lower():
-                        self.lbl_update_status.setText("连接 GitHub 超时 (国内网络波动，建议开启代理后重试)")
-                    else:
-                        self.lbl_update_status.setText(f"网络连接提示: {err_msg}")
-                    self.append_log(f"[UPDATE] 查询异常: {err_msg}")
-                QTimer.singleShot(0, lambda: _ui_err(str(e)))
+                self._update_signals.err_sig.emit(str(e))
 
         threading.Thread(target=_worker, daemon=True).start()
 

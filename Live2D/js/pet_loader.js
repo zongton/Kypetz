@@ -71,7 +71,29 @@
         if (!model) return;
         try {
             const prio = (priority !== undefined) ? priority : 3;
-            model.motion(name, 0, prio);
+            let targetMot = name;
+
+            // 智能动作反射防线：若模型未直接包含该名称，自动自适应对齐模型已有动作
+            const mm = model.internalModel && model.internalModel.motionManager;
+            const defs = (mm && mm.definitions) || (model.definitions && model.definitions.motions) || {};
+            const availableGroups = Object.keys(defs);
+
+            if (availableGroups.length > 0 && !defs[targetMot]) {
+                const clean = String(targetMot || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                const found = availableGroups.find(function (g) {
+                    const cg = g.toLowerCase().replace(/[^a-z0-9]/g, "");
+                    return cg === clean || cg.startsWith(clean) || clean.startsWith(cg);
+                });
+                if (found) {
+                    targetMot = found;
+                } else {
+                    targetMot = availableGroups[0];
+                }
+            }
+
+            console.log("[pet_loader] 实际执行 Live2D 动作组 ->", targetMot, "原始指令:", name);
+            model.motion(targetMot, 0, prio);
+
             window.isPerformingAction = true;
             if (actionLockTimer) clearTimeout(actionLockTimer);
             const lockTime = lockMs || 3500;

@@ -199,31 +199,45 @@ def mood_sound(reply: str) -> str:
 
 
 def _match_exact_or_case(target: str, candidates: list):
-    """不区分大小写精确匹配"""
+    """
+    智能动作/表情名称高级模糊容错对齐：
+    1. 精确与大小写忽略匹配
+    2. 下划线与连字符抹平匹配 (例如 tapbody -> tap_body)
+    3. 前缀与词根模糊对齐 (例如 idle01 -> idle, flick -> flick_head)
+    4. 兜底保护：若全无匹配，返回 candidates 里的默认动作，绝不返回不存在的非法动作名
+    """
     if not target or not candidates:
-        return target
+        return candidates[0] if candidates else target
+
+    # 1. 精确与大小写匹配
     for c in candidates:
         if c.lower() == target.lower():
             return c
-    return target
 
+    # 2. 标点下划线抹平比对
+    import re
+    clean_target = re.sub(r"[^a-zA-Z0-9]", "", target).lower()
+    for c in candidates:
+        clean_c = re.sub(r"[^a-zA-Z0-9]", "", c).lower()
+        if clean_target == clean_c:
+            return c
 
-def _find_best_match(keywords: list, candidates: list):
-    """在候选列表中寻找包含指定关键词的项"""
-    if not candidates:
-        return None
-    for kw in keywords:
-        for c in candidates:
-            if kw.lower() in c.lower():
-                return c
-    return None
+    # 3. 前缀与词根模糊对齐 (如 idle01 -> idle, tap -> tap_body)
+    for c in candidates:
+        clean_c = re.sub(r"[^a-zA-Z0-9]", "", c).lower()
+        if clean_target.startswith(clean_c) or clean_c.startswith(clean_target):
+            return c
 
-def clean_display_text(text: str) -> str:
-    """
-    清洗用于在桌面气泡卡片上显示的台词文本。
-    彻底抹除所有机器动作控制标签 ([action: ...], [motion: ...], [expression: ...])，
-    确保气泡框中仅展示自然优美的台词，动作交由模型表演。
-    """
-    t = text or ""
-    t = re.sub(r"\[(?:action|motion|expression)\s*:[^\]]*\]", "", t, flags=re.I)
-    return t.strip()
+    # 4. 常见动作词根兜底比对
+    roots = ["idle", "tap", "shake", "flick", "smile", "pinch", "think", "kime"]
+    for r in roots:
+        if r in clean_target:
+            for c in candidates:
+                if r in c.lower():
+                    return c
+
+    # 5. 兜底返回合法动作 (优先含 idle/normal 项)
+    for c in candidates:
+        if "idle" in c.lower():
+            return c
+    return candidates[0]
