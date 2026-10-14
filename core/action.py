@@ -241,3 +241,82 @@ def _match_exact_or_case(target: str, candidates: list):
         if "idle" in c.lower():
             return c
     return candidates[0]
+
+# ---------------- 真实动作与表情语义映射知识库 ----------------
+COMMON_ACTION_HINTS = {
+    "idle": "自然待机、呼吸平视",
+    "tap_body": "轻戳身体、转动互动、打招呼",
+    "flick_head": "摸头、撩头发、害羞低头",
+    "shake": "摇晃身体、撒娇摇头、轻微抗拒",
+    "pinch_in": "身体前倾靠近、专注凝视",
+    "pinch_out": "身体后撤远离、拉开距离",
+    "kime": "帅气姿势、决胜姿态、吉他演奏",
+    "thinking": "歪头思考、疑惑打量",
+    "shame": "害羞脸红、别过头去",
+    "niya": "得意猫笑、狡黠坏笑",
+    "smile": "开心微笑、满意点头",
+    "angry": "鼓嘴生气、气鼓鼓",
+    "sigh": "困倦叹气、打哈欠",
+    "serious": "严肃认真、凝视专注",
+    "surprised": "吃惊睁大眼、愣住",
+    "bye": "挥手告别、再见",
+    "cry": "委屈难过、眼泪汪汪",
+    "gacha": "雀跃跳动、兴奋抽卡",
+}
+
+COMMON_EXP_HINTS = {
+    "f01": "自然温和、微微微笑",
+    "f02": "害羞转头、眼神飘忽",
+    "f03": "微蹙眉头、托腮思考",
+    "f04": "眼睛闪闪发光、兴奋星星眼",
+    "smile": "甜美微笑",
+    "angry": "生气瞪眼",
+    "thinking": "认真思考",
+    "shame": "脸红害羞",
+    "default": "平静默认",
+}
+
+
+def generate_action_guide(model_key: str = None) -> str:
+    """
+    根据当前实际加载的 Live2D 模型，自动自省其支持的动作与表情列表，
+    并自动生成带有中英文语义说明、情境建议的动作指导 Prompt，注入给大语言模型。
+    """
+    motions, expressions = get_model_capabilities(model_key)
+    if not motions and not expressions:
+        return ""
+
+    lines = [
+        "\n【Live2D 真实身体与面部表情神经连接库】：",
+        "你拥有直接操控当前自身桌面立绘表演的完全控制权！请根据对话语境，在回复开头主动使用标签驱动身体：",
+        ""
+    ]
+    if motions:
+        lines.append("▶ 你当前真实可执行的身体动作列表：")
+        for m in motions:
+            hint = "身体姿态表演"
+            for k, h in COMMON_ACTION_HINTS.items():
+                if k in m.lower():
+                    hint = h
+                    break
+            lines.append(f"  • [action: {m}] —— {hint}")
+
+    if expressions:
+        lines.append("\n▶ 你当前真实可切换的面部表情列表：")
+        for e in expressions:
+            hint = "面部微表情"
+            for k, h in COMMON_EXP_HINTS.items():
+                if k in e.lower():
+                    hint = h
+                    break
+            lines.append(f"  • [expression: {e}] —— {hint}")
+
+    sample_act = motions[0] if motions else "idle"
+    sample_exp = f", {expressions[0]}" if expressions else ""
+    lines.append(
+        f"\n控制指令规范（写在回复最开头）：\n"
+        f"  [action: 动作名] 或 [action: 动作名, 表情名] 或 [expression: 表情名]\n"
+        f"  示例：『[action: {sample_act}{sample_exp}] ……你好呀。』\n"
+        f"系统会自动驱动你的身体做出对应表演，并在给用户展示的气泡中为你自动抹除机器指令，只留下纯净台词。"
+    )
+    return "\n".join(lines)

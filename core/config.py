@@ -70,30 +70,18 @@ _cfg = load_config()
 
 
 def get_dynamic_prompt(model_key: str = None) -> str:
-    """组装大语言模型系统 Prompt (支持通用变量替换与 Live2D 动作协议动态注入)"""
+    """组装大语言模型系统 Prompt (支持通用变量替换与 Live2D 真实动作神经感知注入)"""
     pet_name = _cfg.get("pet_name", "").strip() or "桌宠"
     user_call = _cfg.get("user_call", "").strip() or "主人"
     custom_prompt = _cfg.get("system_prompt", "").strip()
 
-    # 动态获取当前模型的动作与表情元数据
-    try:
-        from core.action import get_model_capabilities
-        m_list, e_list = get_model_capabilities(model_key or _cfg.get("live2d_model", ""))
-    except Exception:
-        m_list, e_list = [], []
-
+    # 动态注入当前模型真实对应的动作与表情语义清单
     action_guidance = ""
-    if m_list or e_list:
-        mots_str = ", ".join(m_list[:16]) if m_list else "无"
-        exps_str = ", ".join(e_list[:12]) if e_list else "无"
-        sample_mot = m_list[0] if m_list else "idle01"
-        action_guidance = (
-            f"\n\n【Live2D 身体动作控制权限】：你拥有直接操控自身 Live2D 桌面模型身体表演的最高权限！\n"
-            f"- 当前模型可用动作清单：[{mots_str}]\n"
-            f"- 当前模型可用表情清单：[{exps_str}]\n"
-            f"在每次回复开头请务必使用动作圆括号（如『（拿起吉他）』『（歪头思考）』『（脸红别过头）』『（猫系坏笑）』『（点点头）』『（咬一口抹茶冰淇淋）』『（鼓嘴生气）』）或直接使用指令标签 [action: 动作名, 表情名]，系统会自动驱动你的身体做出对应表演！\n"
-            f"示例：『[action: {sample_mot}] ……{user_call}想听？那就迷失吧。』或『（脸红别过头）……笨蛋。』"
-        )
+    try:
+        from core.action import generate_action_guide
+        action_guidance = generate_action_guide(model_key or _cfg.get("live2d_model", ""))
+    except Exception as e:
+        print("[PROMPT Action Guide Err]", e)
 
     if custom_prompt:
         base_p = custom_prompt.replace("{pet_name}", pet_name).replace("{user_call}", user_call)

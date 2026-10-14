@@ -18,7 +18,7 @@ def llm_ask(text: str) -> str:
     base = _cfg.get("llm_base", "").strip()
     key = _cfg.get("llm_key", "").strip()
     model = _cfg.get("llm_model", "").strip()
-    system_content = get_dynamic_prompt()
+    system_content = get_dynamic_prompt(_cfg.get("live2d_model", ""))
 
     if base:
         try:
