@@ -924,7 +924,7 @@ class KypetzDashboard(QDialog):
     def do_check_update(self):
         repo = DEFAULT_GITHUB_REPO
         self.btn_check_update.setEnabled(False)
-        self.lbl_update_status.setText("正在连接 GitHub 查询最新版本...")
+        self.lbl_update_status.setText("正在连接 GitHub 探测最新版本...")
         self.update_notes.hide()
         self.btn_do_upgrade.hide()
 
@@ -942,15 +942,15 @@ class KypetzDashboard(QDialog):
                             return urllib.request.build_opener(urllib.request.ProxyHandler({"http": p_url, "https": p_url}))
                 except Exception:
                     pass
-            return urllib.request.build_opener()
+            # 默认直连 opener (清空代理环境变量干扰)
+            return urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
         def _worker():
             try:
                 url = f"https://api.github.com/repos/{repo}/releases/latest"
                 req = urllib.request.Request(url, headers={"User-Agent": "Kypetz-Desktop/1.0", "Accept": "application/vnd.github+json"})
                 opener = _get_proxy_opener()
-                # 严格限制 6 秒超时，防止网络死锁卡死
-                with opener.open(req, timeout=6) as r:
+                with opener.open(req, timeout=8) as r:
                     data = json.loads(r.read().decode("utf-8"))
 
                 tag = data.get("tag_name", "").strip()
@@ -966,25 +966,31 @@ class KypetzDashboard(QDialog):
                 if not zip_url:
                     zip_url = data.get("zipball_url")
 
-                # 比较版本号
+                # 规范化版本号比较
                 remote_clean = tag.lstrip("vV")
                 local_clean = APP_VERSION.lstrip("vV")
 
                 def _ui_done():
                     self.btn_check_update.setEnabled(True)
+                    self.latest_zip_url = zip_url
+                    self.latest_ver_tag = tag
+
+                    # 无论版本是否相同，均完整展现拉取到的 GitHub Release 详情
+                    self.update_notes.setText(body)
+                    self.update_notes.show()
+
                     if remote_clean and remote_clean != local_clean:
-                        self.latest_zip_url = zip_url
-                        self.latest_ver_tag = tag
                         self.lbl_update_status.setText(f"🎉 发现新版本: {tag} ({name})！当前运行版本: {APP_VERSION}")
-                        self.update_notes.setText(body)
-                        self.update_notes.show()
                         if zip_url:
                             self.btn_do_upgrade.setText(f"🚀 一键自动下载并热升级至 {tag}")
                             self.btn_do_upgrade.show()
-                        self.append_log(f"[UPDATE] 检查到新版本: {tag} ✓")
+                        self.append_log(f"[UPDATE] 成功检测到新发布版本: {tag} ({name}) ✓")
                     else:
-                        self.lbl_update_status.setText(f"🎉 当前已是最新版本 ({APP_VERSION})，无需更新。")
-                        self.append_log(f"[UPDATE] 当前已是最新版本 ({APP_VERSION}) ✓")
+                        self.lbl_update_status.setText(f"✓ 成功检测到 GitHub 最新 Release: {tag}！当前已是该版本。")
+                        if zip_url:
+                            self.btn_do_upgrade.setText(f"🔄 重新下载覆盖安装此版本 ({tag})")
+                            self.btn_do_upgrade.show()
+                        self.append_log(f"[UPDATE] GitHub 远程版本同步成功: {tag} ({name}) ✓")
 
                 QTimer.singleShot(0, _ui_done)
 
@@ -992,12 +998,12 @@ class KypetzDashboard(QDialog):
                 def _ui_err(err_msg):
                     self.btn_check_update.setEnabled(True)
                     if "404" in err_msg:
-                        self.lbl_update_status.setText(f"🎉 当前已是最新发布版本 ({APP_VERSION}) ✓")
+                        self.lbl_update_status.setText(f"远程仓库暂无已发布的 Release 标签，当前本地版本: {APP_VERSION}")
                     elif "timed out" in err_msg.lower() or "10054" in err_msg or "reset" in err_msg.lower():
-                        self.lbl_update_status.setText("连接 GitHub 超时 (网络波动或被阻断，建议开启网络代理重试)")
+                        self.lbl_update_status.setText("连接 GitHub 超时 (国内网络波动，建议开启代理后重试)")
                     else:
-                        self.lbl_update_status.setText(f"检查完成: 当前已是最新发布版本 ({APP_VERSION}) ✓")
-                    self.append_log(f"[UPDATE] 检查更新状态: {err_msg}")
+                        self.lbl_update_status.setText(f"网络连接提示: {err_msg}")
+                    self.append_log(f"[UPDATE] 查询异常: {err_msg}")
                 QTimer.singleShot(0, lambda: _ui_err(str(e)))
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -1008,22 +1014,22 @@ class KypetzDashboard(QDialog):
             return
 
         confirm = QMessageBox.question(
-            self, "确认一键升级",
-            f"即将自动下载并热升级至 {self.latest_ver_tag}！\n\n"
-            "【特别安全保护】：升级过程中将严格保留你的本地配置文件 (config.json)，绝不会重置你的 API Key 与个人配置。\n\n"
-            "是否立即开始自动升级？",
+            self, "确认热升级",
+            f"即将自动下载并覆盖安装版本 {self.latest_ver_tag}！\n\n"
+            "【特别安全保护】：升级过程中将严格保留你的本地配置文件 (config.json)，绝不会重置你的 API Key 与个人人设。\n\n"
+            "是否立即开始自动下载与安装？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
         self.btn_do_upgrade.setEnabled(False)
-        self.lbl_update_status.setText("正在极速下载更新压缩包，请稍候...")
+        self.lbl_update_status.setText(f"正在从 GitHub 下载 {self.latest_ver_tag} 安装包，请稍候...")
 
         def _upgrade_worker():
-            temp_zip = os.path.join(tempfile.gettempdir(), f"kypet_update_{os.urandom(4).hex()}.zip")
+            temp_zip = os.path.join(tempfile.gettempdir(), f"kypetz_update_{os.urandom(4).hex()}.zip")
             try:
-                # 1. 下载新版本 zip 包 (使用智能代理连接)
+                # 1. 下载新版本 zip 包
                 import socket
                 proxy_handler = None
                 for port in [7890, 10809, 10808, 7897]:
@@ -1032,7 +1038,7 @@ class KypetzDashboard(QDialog):
                         if s.connect_ex(("127.0.0.1", port)) == 0:
                             proxy_handler = urllib.request.ProxyHandler({"http": f"http://127.0.0.1:{port}", "https": f"http://127.0.0.1:{port}"})
                             break
-                opener = urllib.request.build_opener(proxy_handler) if proxy_handler else urllib.request.build_opener()
+                opener = urllib.request.build_opener(proxy_handler) if proxy_handler else urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
                 req = urllib.request.Request(self.latest_zip_url, headers={"User-Agent": "Kypetz-Desktop/1.0"})
                 with opener.open(req, timeout=90) as r, open(temp_zip, "wb") as f:
@@ -1063,8 +1069,8 @@ class KypetzDashboard(QDialog):
                             dst.write(src.read())
 
                 def _upgrade_success():
-                    self.lbl_update_status.setText(f"🎉 升级完成！已成功更新至 {self.latest_ver_tag}。")
-                    self.append_log(f"[UPDATE] 自动覆盖升级完成，版本: {self.latest_ver_tag} ✓")
+                    self.lbl_update_status.setText(f"🎉 升级完成！已成功安装至 {self.latest_ver_tag}。")
+                    self.append_log(f"[UPDATE] 自动热升级完成，版本: {self.latest_ver_tag} ✓")
                     QMessageBox.information(
                         self, "升级成功",
                         f"Kypetz 已成功自动热升级至 {self.latest_ver_tag}！\n\n点击确定退出程序，重新启动即可享受最新功能。"

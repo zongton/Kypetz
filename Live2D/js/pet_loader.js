@@ -518,6 +518,12 @@
         })();
 
         // ---- 全局视线与头部灵动追踪 (眼神注视鼠标) ----
+        window.focusGlobal = function (relX, relY) {
+            if (model && typeof model.focus === "function") {
+                model.focus(relX, relY);
+            }
+        };
+
         window.addEventListener("pointermove", function (e) {
             if (model && typeof model.focus === "function") {
                 model.focus(e.clientX, e.clientY);

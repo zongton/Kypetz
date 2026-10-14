@@ -12,7 +12,7 @@ import random
 import threading
 import keyboard
 from PySide6.QtCore import Qt, QUrl, QTimer
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtGui import QFont, QColor, QCursor
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
@@ -302,6 +302,24 @@ def main():
     timer = QTimer(win)
     timer.timeout.connect(lambda: _drain(result_queue, win.bridge))
     timer.start(200)
+
+    # 屏幕全域视线灵动追踪 (彻底突破窗口边框，全局眼神与头部跟随鼠标)
+    last_mouse_pos = [-9999, -9999]
+    def track_global_cursor():
+        try:
+            pos = QCursor.pos()
+            mx, my = pos.x(), pos.y()
+            if abs(mx - last_mouse_pos[0]) > 2 or abs(my - last_mouse_pos[1]) > 2:
+                last_mouse_pos[0], last_mouse_pos[1] = mx, my
+                rel_x = mx - win.x()
+                rel_y = my - win.y()
+                win.bridge.eval_js.emit(f"window.focusGlobal && window.focusGlobal({rel_x}, {rel_y})")
+        except Exception:
+            pass
+
+    cursor_timer = QTimer(win)
+    cursor_timer.timeout.connect(track_global_cursor)
+    cursor_timer.start(45)
 
     def on_change_skin(skin_key):
         win.bridge.eval_js.emit(f"window.changeModel && window.changeModel('{skin_key}')")
