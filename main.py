@@ -29,7 +29,7 @@ from core.config import (
 )
 from core.server import ensure_server
 from core.llm import llm_ask, fetch_models
-from core.action import parse_ai_action, is_action_only, mood_sound, strip_action_tags, get_model_capabilities
+from core.action import parse_ai_action, is_action_only, mood_sound, strip_action_tags, clean_display_text, get_model_capabilities
 from core.llm import llm_ask, fetch_models, llm_ask_proactive
 from audio.chimes import play_chime, CHIME_START
 from audio.player import _ui_sig
@@ -53,19 +53,22 @@ def process(text: str, bridge: JsBridge) -> None:
     reply = llm_ask(text)
     print(f"[{pet_name}] '{text}' -> '{reply}'")
 
-    # 动作与表情意图解析 (动态适配当前模型)
+    # 动作与表情意图解析 (直接驱动模型演出)
     mot, exp = parse_ai_action(reply)
-    print(f"[{pet_name}][Action] 解析动作: motion='{mot}', expression='{exp}'")
+    print(f"[{pet_name}][Action] 驱动模型表演: motion='{mot}', expression='{exp}'")
 
-    # 语音文本提取：剥离动作标签 [action: ...] 与括号动作
+    # 桌面气泡展示文本：彻底抹去机器指令 [action: ...]，只给用户看纯净台词
+    display_reply = clean_display_text(reply)
+
+    # 语音发音文本：剥离机器指令与多余动作括号
     if is_action_only(reply):
         voice_text = mood_sound(reply)
     else:
         clean_speech = strip_action_tags(reply)
         voice_text = clean_speech if clean_speech else mood_sound(reply)
 
-    # 传给 speak 音频流水线，在发声瞬间毫秒级音画同步驱动模型动作与字幕
-    speak(text, reply, voice_text, mot, exp)
+    # 传给 speak 音频流水线，在发声瞬间毫秒级音画同步驱动模型动作与纯净字幕
+    speak(text, display_reply, voice_text, mot, exp)
 
 
 def _drain(q, br: JsBridge) -> None:
@@ -120,7 +123,8 @@ def idle_companion_loop(win) -> None:
                     print(f"[{pet_name}][Idle] 主动发起话题: '{reply}'")
                     mot, exp = parse_ai_action(reply)
                     voice_text = strip_action_tags(reply)
-                    speak("主动搭话", reply, voice_text, mot, exp)
+                    display_reply = clean_display_text(reply)
+                    speak("主动搭话", display_reply, voice_text, mot, exp)
             except Exception as e:
                 print(f"[{pet_name}][Idle err]", e)
                 _ui_sig.status.emit("按住 Ctrl 说话")

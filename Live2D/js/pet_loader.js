@@ -127,6 +127,9 @@
         var _ranaTimer = null;
         window.showRanaBubble = function (text, durationMs, petName) {
             if (!ranaCard || !text) return;
+            // 前端双重保险：彻底抹去任何机器指令标签 [action: ...]
+            var cleanText = String(text || "").replace(/\[(?:action|motion|expression)\s*:[^\]]*\]/gi, "").trim();
+            if (!cleanText) return;
             var name = petName || "桌宠";
             ranaCard.innerHTML =
                 "<div style='display:flex; align-items:center; margin-bottom:8px;'>" +
@@ -137,7 +140,7 @@
                 "  <span style='margin-left:auto; cursor:pointer; opacity:0.4; font-size:12px;' onclick='this.closest(\"#rana-reply-card\").style.opacity=0;'>✕</span>" +
                 "</div>" +
                 "<div style='color:rgba(255,255,255,0.96); font-size:14.5px; font-weight:400; line-height:1.65; word-break:break-word;'>" +
-                _esc(text) +
+                _esc(cleanText) +
                 "</div>";
             ranaCard.style.opacity = "1";
             ranaCard.style.transform = "translateY(0) scale(1)";
